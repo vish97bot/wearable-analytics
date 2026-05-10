@@ -77,22 +77,63 @@ if uploaded_file is not None:
             conn.close()
 
     # ULTRAHUMAN ANALYSIS
-    elif export_type == "Ultrahuman":
+elif export_type == "Ultrahuman":
 
-        csv_files = [f for f in extracted_files if f.endswith(".csv")]
+    csv_files = [f for f in extracted_files if f.endswith(".csv")]
 
-        st.subheader("CSV Files")
-        st.write(csv_files)
+    st.subheader("CSV Files")
+    st.write(csv_files)
 
-        if csv_files:
+    all_metrics = []
 
-            sample_df = pd.read_csv(csv_files[0])
+    for csv_file in csv_files:
 
-            st.subheader("Sample Data")
-            st.dataframe(sample_df.head())
+        try:
+            df = pd.read_csv(csv_file)
 
-            st.subheader("Columns")
-            st.write(sample_df.columns.tolist())
+            st.markdown(f"---")
+            st.subheader(f"File: {os.path.basename(csv_file)}")
+
+            st.write(f"Rows: {len(df)}")
+
+            st.write("Columns:")
+            st.write(df.columns.tolist())
+
+            # Detect metric column
+            possible_metric_cols = [
+                "data_type",
+                "type",
+                "metric"
+            ]
+
+            metric_col = None
+
+            for col in possible_metric_cols:
+                if col in df.columns:
+                    metric_col = col
+                    break
+
+            if metric_col:
+
+                metrics = df[metric_col].unique().tolist()
+
+                st.write("Detected Metrics:")
+                st.write(metrics)
+
+                all_metrics.extend(metrics)
+
+            st.write("Sample Data:")
+            st.dataframe(df.head())
+
+        except Exception as e:
+            st.error(f"Could not read {csv_file}")
+            st.error(str(e))
+
+    st.header("All Detected Metrics")
+
+    unique_metrics = list(set(all_metrics))
+
+    st.write(unique_metrics)
 
     # ZEPP ANALYSIS
     elif export_type == "Zepp":
