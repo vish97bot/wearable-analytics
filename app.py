@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import zipfile
-import sqlite3
 import os
 import tempfile
 
@@ -13,15 +12,15 @@ st.set_page_config(
 st.title("Wearable Analytics Dashboard")
 
 uploaded_file = st.file_uploader(
-    "Upload wearable export ZIP",
+    "Upload Ultrahuman ZIP",
     type=["zip"]
 )
 
 if uploaded_file is not None:
 
-    st.success("ZIP uploaded successfully!")
+    st.success("ZIP uploaded!")
 
-    # Create temp folder
+    # Create temp directory
     temp_dir = tempfile.mkdtemp()
 
     zip_path = os.path.join(
@@ -29,7 +28,7 @@ if uploaded_file is not None:
         uploaded_file.name
     )
 
-    # Save uploaded ZIP
+    # Save ZIP
     with open(zip_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
@@ -37,52 +36,68 @@ if uploaded_file is not None:
     with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(temp_dir)
 
-    # Collect extracted files
+    # Collect files
     extracted_files = []
 
     for root, dirs, files in os.walk(temp_dir):
-        for file in files:
-            extracted_files.append(
-                os.path.join(root, file)
-            )
 
-    st.subheader("Detected Files")
+        for file in files:
+
+            full_path = os.path.join(root, file)
+
+            extracted_files.append(full_path)
+
+    st.header("Extracted Files")
+
     st.write(extracted_files)
 
-    # Detect export type
-    export_type = "Unknown"
+    # Find ring data CSVs
+    ring_csvs = []
 
     for file in extracted_files:
 
-        lower = file.lower()
+        filename = os.path.basename(file)
 
-        if "healthconnect" in lower or lower.endswith(".db"):
-            export_type = "Health Connect"
+        if (
+            filename.endswith(".csv")
+            and "ring_data" in filename
+        ):
 
-        elif "ring_data" in lower:
-            export_type = "Ultrahuman"
+            ring_csvs.append(file)
 
-        elif "zepp" in lower or "activity" in lower:
-            export_type = "Zepp"
+    st.header("Ring CSV Files")
 
-    st.header(f"Detected Export: {export_type}")
+    st.write(ring_csvs)
 
-    # ============================================
-    # HEALTH CONNECT
-    # ============================================
+    # Read first CSV only
+    if len(ring_csvs) > 0:
 
-    if export_type == "Health Connect":
+        first_csv = ring_csvs[0]
 
-        db_files = []
+        st.header("Reading First CSV")
 
-        for f in extracted_files:
-            if f.endswith(".db"):
-                db_files.append(f)
+        st.write(first_csv)
 
-        if len(db_files) > 0:
+        try:
 
-            db_path = db_files[0]
+            df = pd.read_csv(first_csv)
 
-            conn = sqlite3.connect(db_path)
+            st.success("CSV loaded successfully!")
 
-            tables = pd.read
+            st.header("Columns")
+
+            st.write(df.columns.tolist())
+
+            st.header("Shape")
+
+            st.write(df.shape)
+
+            st.header("Sample Data")
+
+            st.dataframe(df.head())
+
+        except Exception as e:
+
+            st.error("CSV failed to load")
+
+            st.error(str(e))
