@@ -75,9 +75,92 @@ if uploaded_file is not None:
             st.dataframe(tables)
 
             conn.close()
+# ULTRAHUMAN ANALYSIS
+elif export_type == "Ultrahuman":
 
-    # ULTRAHUMAN ANALYSIS
-    elif export_type == "Ultrahuman":
+    csv_files = [
+        f for f in extracted_files
+        if f.endswith(".csv")
+        and "ring_data" in os.path.basename(f)
+    ]
+
+    st.subheader("Detected Ring Data Files")
+    st.write(csv_files)
+
+    combined_df = pd.DataFrame()
+
+    # Load all weekly files
+    for csv_file in csv_files:
+
+        try:
+            df = pd.read_csv(csv_file)
+
+            df["source_file"] = os.path.basename(csv_file)
+
+            combined_df = pd.concat(
+                [combined_df, df],
+                ignore_index=True
+            )
+
+        except Exception as e:
+
+            st.error(f"Failed to read {csv_file}")
+            st.error(str(e))
+
+    st.header("Combined Dataset Overview")
+
+    st.write(f"Total Rows: {len(combined_df)}")
+
+    st.subheader("Columns")
+    st.write(combined_df.columns.tolist())
+
+    st.subheader("Sample Data")
+    st.dataframe(combined_df.head())
+
+    # Detect metric column
+    metric_col = None
+
+    for possible_col in [
+        "data_type",
+        "metric",
+        "type"
+    ]:
+
+        if possible_col in combined_df.columns:
+            metric_col = possible_col
+            break
+
+    if metric_col:
+
+        st.header("Detected Metrics")
+
+        metrics = (
+            combined_df[metric_col]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+
+        st.write(metrics)
+
+        # Metric frequency
+        metric_counts = (
+            combined_df[metric_col]
+            .value_counts()
+            .reset_index()
+        )
+
+        metric_counts.columns = ["Metric", "Count"]
+
+        st.subheader("Metric Counts")
+
+        st.dataframe(metric_counts)
+
+    else:
+
+        st.warning(
+            "No metric column detected."
+        )
 
         csv_files = [f for f in extracted_files if f.endswith(".csv")]
 
