@@ -34,10 +34,10 @@ if uploaded_file is not None:
         f.write(uploaded_file.getbuffer())
 
     # Extract ZIP
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
         zip_ref.extractall(temp_dir)
 
-    # Get all extracted files
+    # Collect extracted files
     extracted_files = []
 
     for root, dirs, files in os.walk(temp_dir):
@@ -47,7 +47,6 @@ if uploaded_file is not None:
             )
 
     st.subheader("Detected Files")
-
     st.write(extracted_files)
 
     # Detect export type
@@ -68,36 +67,22 @@ if uploaded_file is not None:
 
     st.header(f"Detected Export: {export_type}")
 
-    # ==================================================
+    # ============================================
     # HEALTH CONNECT
-    # ==================================================
+    # ============================================
 
     if export_type == "Health Connect":
 
-        db_files = [
-            f for f in extracted_files
-            if f.endswith(".db")
-        ]
+        db_files = []
 
-        if db_files:
+        for f in extracted_files:
+            if f.endswith(".db"):
+                db_files.append(f)
+
+        if len(db_files) > 0:
 
             db_path = db_files[0]
 
             conn = sqlite3.connect(db_path)
 
-            tables = pd.read_sql_query(
-                "SELECT name FROM sqlite_master WHERE type='table';",
-                conn
-            )
-
-            st.subheader("Database Tables")
-
-            st.dataframe(tables)
-
-            conn.close()
-
-    # ==================================================
-    # ULTRAHUMAN
-    # ==================================================
-
-    elif
+            tables = pd.read
