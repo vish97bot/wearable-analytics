@@ -38,11 +38,30 @@ def find_csv(zip_file, keyword):
 
     return None
 
-
 def load_csv_from_zip(zip_file, filename):
 
     with zip_file.open(filename) as f:
-        return pd.read_csv(f)
+
+        try:
+            return pd.read_csv(
+                f,
+                sep=None,
+                engine="python",
+                on_bad_lines="skip",
+                encoding="utf-8"
+            )
+
+        except Exception:
+
+            f.seek(0)
+
+            return pd.read_csv(
+                f,
+                sep=";",
+                engine="python",
+                on_bad_lines="skip",
+                encoding="latin1"
+            )
 
 
 # =====================================================
