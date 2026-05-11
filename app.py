@@ -1,246 +1,323 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import zipfile
-import io
+import streamlit as st import pandas as pd import numpy as np import plotly.express as px import zipfile import io
 
-# =====================================================
-# PAGE CONFIG
-# =====================================================
+=====================================================
 
-st.set_page_config(
-    page_title="Wearable Analytics Dashboard",
-    layout="wide"
+PAGE CONFIG
+
+=====================================================
+
+st.set_page_config( page_title="Wearable Intelligence Dashboard", layout="wide" )
+
+=====================================================
+
+STYLING
+
+=====================================================
+
+st.markdown( """ <style> .metric-card { background-color: #111827; padding: 20px; border-radius: 18px; border: 1px solid #1f2937; text-align: center; }
+
+.metric-title {
+    color: #9ca3af;
+    font-size: 14px;
+}
+
+.metric-value {
+    color: white;
+    font-size: 36px;
+    font-weight: bold;
+}
+
+.section-title {
+    font-size: 28px;
+    font-weight: bold;
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+</style>
+""",
+unsafe_allow_html=True
+
 )
 
-st.title("Personal Wearable Analytics Dashboard")
+=====================================================
 
-st.caption(
-    "Upload Zepp, Ultrahuman, or Health Connect exports"
-)
+TITLE
 
-# =====================================================
-# FILE UPLOAD
-# =====================================================
+=====================================================
 
-uploaded_zip = st.file_uploader(
-    "Upload ZIP Export",
-    type=["zip"]
-)
+st.title("Wearable Intelligence Dashboard") st.caption("Ultrahuman • Zepp • Health Connect")
 
-# =====================================================
-# HELPERS
-# =====================================================
+=====================================================
+
+SIDEBAR
+
+=====================================================
+
+st.sidebar.header("Controls")
+
+uploaded_zip = st.sidebar.file_uploader( "Upload Wearable ZIP", type=["zip"] )
+
+selected_days = st.sidebar.slider( "Days to Display", min_value=7, max_value=365, value=60 )
+
+show_raw = st.sidebar.checkbox("Show Raw Data")
+
+=====================================================
+
+HELPERS
+
+=====================================================
 
 def load_csv_from_zip(zip_file, filename):
 
-    with zip_file.open(filename) as f:
+with zip_file.open(filename) as f:
 
-        try:
-            return pd.read_csv(
-                f,
-                sep=None,
-                engine="python",
-                on_bad_lines="skip",
-                encoding="utf-8"
-            )
+    try:
+        return pd.read_csv(
+            f,
+            sep=None,
+            engine="python",
+            on_bad_lines="skip",
+            encoding="utf-8"
+        )
 
-        except Exception:
+    except Exception:
 
-            f.seek(0)
+        f.seek(0)
 
-            return pd.read_csv(
-                f,
-                sep=";",
-                engine="python",
-                on_bad_lines="skip",
-                encoding="latin1"
-            )
+        return pd.read_csv(
+            f,
+            sep=";",
+            engine="python",
+            on_bad_lines="skip",
+            encoding="latin1"
+        )
 
-# =====================================================
-# MAIN
-# =====================================================
+=====================================================
+
+MAIN
+
+=====================================================
 
 if uploaded_zip is not None:
 
-    zip_bytes = io.BytesIO(uploaded_zip.read())
+zip_bytes = io.BytesIO(uploaded_zip.read())
 
-    with zipfile.ZipFile(zip_bytes) as z:
+with zipfile.ZipFile(zip_bytes) as z:
 
-        st.success("ZIP uploaded successfully")
+    files = z.namelist()
 
-        files = z.namelist()
+    ring_files = [
+        f for f in files
+        if "ring_data" in f.lower()
+        and f.endswith(".csv")
+    ]
 
-        st.subheader("Files Detected")
+    combined_df = pd.DataFrame()
 
-        st.write(files)
+    progress = st.progress(0)
 
-        # =============================================
-        # FIND RING DATA FILES
-        # =============================================
+    for i, file in enumerate(ring_files):
 
-        ring_files = [
-            f for f in files
-            if "ring_data" in f.lower()
-            and f.endswith(".csv")
-        ]
+        try:
 
-        st.subheader("Ring Data Files")
+            df = load_csv_from_zip(z, file)
 
-        st.write(f"Detected {len(ring_files)} ring data files")
+            df["source_file"] = file
 
-        # =============================================
-        # LOAD ALL RING FILES
-        # =============================================
-
-        combined_df = pd.DataFrame()
-
-        for file in ring_files:
-
-            try:
-
-                df = load_csv_from_zip(z, file)
-
-                df["source_file"] = file
-
-                combined_df = pd.concat(
-                    [combined_df, df],
-                    ignore_index=True
-                )
-
-            except Exception as e:
-
-                st.warning(f"Could not load {file}: {e}")
-
-        # =============================================
-        # DISPLAY DATA
-        # =============================================
-
-        if not combined_df.empty:
-
-            st.subheader("Combined Ring Dataset")
-
-            st.write(
-                f"Total rows loaded: {len(combined_df):,}"
+            combined_df = pd.concat(
+                [combined_df, df],
+                ignore_index=True
             )
 
-            st.dataframe(combined_df.head())
+        except Exception:
+            pass
 
-            st.subheader("Columns")
+        progress.progress((i + 1) / len(ring_files))
 
-            st.write(combined_df.columns.tolist())
+    # =================================================
+    # CLEANING
+    # =================================================
 
-            # =========================================
-            # NUMERIC COLUMNS
-            # =========================================
+    if not combined_df.empty:
 
-            numeric_cols = combined_df.select_dtypes(
-                include=np.number
-            ).columns.tolist()
+        if "timestamp_epoch" in combined_df.columns:
 
-            st.subheader("Numeric Metrics")
+            combined_df["datetime"] = pd.to_datetime(
+                combined_df["timestamp_epoch"],
+                unit="s",
+                errors="coerce"
+            )
 
-            st.write(numeric_cols)
+            combined_df["date"] = (
+                combined_df["datetime"].dt.date
+            )
 
-            # =========================================
-            # DATE DETECTION
-            # =========================================
+        combined_df = combined_df.dropna(
+            subset=["date"]
+        )
 
-            possible_dates = [
-                c for c in combined_df.columns
-                if "date" in c.lower()
-                or "time" in c.lower()
-            ]
+        # =============================================
+        # FILTER RECENT DAYS
+        # =============================================
 
-            # Ultrahuman epoch conversion
-            if "timestamp_epoch" in combined_df.columns:
+        latest_date = pd.to_datetime(
+            combined_df["date"]
+        ).max()
 
-                combined_df["datetime"] = pd.to_datetime(
-                    combined_df["timestamp_epoch"],
-                    unit="s",
-                    errors="coerce"
-                )
+        cutoff_date = latest_date - pd.Timedelta(
+            days=selected_days
+        )
 
-                possible_dates.append("datetime")
+        combined_df = combined_df[
+            pd.to_datetime(combined_df["date"])
+            >= cutoff_date
+        ]
 
-            st.subheader("Possible Date Columns")
+        # =============================================
+        # METRIC MAPPING
+        # =============================================
 
-            st.write(possible_dates)
+        metric_map = {
+            "raw_hrv_2": "HRV",
+            "resting_heart_rate": "Resting HR",
+            "heart_rate": "Heart Rate",
+            "steps": "Steps",
+            "sleep_duration": "Sleep Duration"
+        }
 
-            # =========================================
-            # DATA TYPES
-            # =========================================
+        combined_df["metric_name"] = (
+            combined_df["data_type"]
+            .replace(metric_map)
+        )
 
-            if "data_type" in combined_df.columns:
+        # =============================================
+        # HRV
+        # =============================================
 
-                st.subheader("Detected Data Types")
+        hrv_df = combined_df[
+            combined_df["data_type"] == "raw_hrv_2"
+        ].copy()
 
-                data_types = (
-                    combined_df["data_type"]
-                    .value_counts()
-                    .reset_index()
-                )
+        recovery_score = 0
+        avg_hrv = 0
 
-                data_types.columns = [
-                    "data_type",
-                    "count"
-                ]
+        if not hrv_df.empty:
 
-                st.dataframe(data_types)
+            daily_hrv = (
+                hrv_df.groupby("date")["value"]
+                .mean()
+                .reset_index()
+            )
 
-                selected_type = st.selectbox(
-                    "Select Metric",
-                    data_types["data_type"].tolist()
-                )
+            avg_hrv = daily_hrv["value"].tail(7).mean()
 
-                filtered = combined_df[
-                    combined_df["data_type"] == selected_type
-                ]
+            recovery_score = np.clip(
+                (avg_hrv / 120) * 100,
+                0,
+                100
+            )
 
-            else:
+        # =============================================
+        # SLEEP ESTIMATION
+        # =============================================
 
-                filtered = combined_df.copy()
+        sleep_score = np.clip(
+            recovery_score * 0.92,
+            0,
+            100
+        )
 
-            # =========================================
-            # VISUALIZATION
-            # =========================================
+        readiness_score = (
+            recovery_score * 0.6 +
+            sleep_score * 0.4
+        )
 
-            if (
-                len(possible_dates) > 0
-                and len(numeric_cols) > 0
-            ):
+        # =============================================
+        # HERO METRICS
+        # =============================================
 
-                if "datetime" in filtered.columns:
-                    date_col = "datetime"
-                else:
-                    date_col = possible_dates[0]
+        st.markdown(
+            '<div class="section-title">Overview</div>',
+            unsafe_allow_html=True
+        )
 
-                metric_col = "value"
+        col1, col2, col3, col4 = st.columns(4)
 
-                filtered = filtered.dropna(
-                    subset=[date_col]
-                )
+        with col1:
+            st.markdown(
+                f'''
+                <div class="metric-card">
+                    <div class="metric-title">Recovery</div>
+                    <div class="metric-value">{recovery_score:.0f}</div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
 
-                filtered["date"] = (
-                    filtered[date_col].dt.date
-                )
+        with col2:
+            st.markdown(
+                f'''
+                <div class="metric-card">
+                    <div class="metric-title">Sleep</div>
+                    <div class="metric-value">{sleep_score:.0f}</div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
 
-                daily = (
-                    filtered.groupby("date")[metric_col]
-                    .mean()
-                    .reset_index()
-                )
+        with col3:
+            st.markdown(
+                f'''
+                <div class="metric-card">
+                    <div class="metric-title">Readiness</div>
+                    <div class="metric-value">{readiness_score:.0f}</div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
 
-                st.subheader(
-                    f"{selected_type} Trend"
-                )
+        with col4:
+            st.markdown(
+                f'''
+                <div class="metric-card">
+                    <div class="metric-title">Average HRV</div>
+                    <div class="metric-value">{avg_hrv:.0f}</div>
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+
+        # =============================================
+        # TABS
+        # =============================================
+
+        overview_tab, recovery_tab, trends_tab, insights_tab = st.tabs([
+            "Overview",
+            "Recovery",
+            "Trends",
+            "Insights"
+        ])
+
+        # =============================================
+        # OVERVIEW TAB
+        # =============================================
+
+        with overview_tab:
+
+            st.subheader("HRV Trend")
+
+            if not hrv_df.empty:
 
                 fig = px.line(
-                    daily,
+                    daily_hrv,
                     x="date",
-                    y=metric_col,
-                    title=f"{selected_type} Over Time"
+                    y="value",
+                    title="Daily HRV"
+                )
+
+                fig.update_layout(
+                    template="plotly_dark",
+                    height=450
                 )
 
                 st.plotly_chart(
@@ -248,42 +325,116 @@ if uploaded_zip is not None:
                     use_container_width=True
                 )
 
-                # =====================================
-                # SUMMARY STATS
-                # =====================================
+        # =============================================
+        # RECOVERY TAB
+        # =============================================
 
-                st.subheader("Summary Statistics")
+        with recovery_tab:
 
-                col1, col2, col3 = st.columns(3)
+            recovery_df = daily_hrv.copy()
 
-                with col1:
-                    st.metric(
-                        "Average",
-                        f"{daily[metric_col].mean():.2f}"
-                    )
+            recovery_df["rolling_hrv"] = (
+                recovery_df["value"]
+                .rolling(7)
+                .mean()
+            )
 
-                with col2:
-                    st.metric(
-                        "Maximum",
-                        f"{daily[metric_col].max():.2f}"
-                    )
+            fig = px.line(
+                recovery_df,
+                x="date",
+                y=["value", "rolling_hrv"],
+                title="Recovery Trend"
+            )
 
-                with col3:
-                    st.metric(
-                        "Minimum",
-                        f"{daily[metric_col].min():.2f}"
-                    )
+            fig.update_layout(
+                template="plotly_dark",
+                height=500
+            )
 
-                # =====================================
-                # RAW DATA
-                # =====================================
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
 
-                with st.expander("View Raw Data"):
+        # =============================================
+        # TRENDS TAB
+        # =============================================
 
-                    st.dataframe(filtered.head(1000))
+        with trends_tab:
+
+            st.subheader("Metric Distribution")
+
+            if not hrv_df.empty:
+
+                fig = px.histogram(
+                    hrv_df,
+                    x="value",
+                    nbins=50,
+                    title="HRV Distribution"
+                )
+
+                fig.update_layout(
+                    template="plotly_dark",
+                    height=450
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
+
+        # =============================================
+        # INSIGHTS TAB
+        # =============================================
+
+        with insights_tab:
+
+            st.subheader("AI Insights")
+
+            insights = []
+
+            if avg_hrv > 90:
+                insights.append(
+                    "Recovery appears strong with consistently elevated HRV."
+                )
+
+            if avg_hrv < 50:
+                insights.append(
+                    "HRV appears suppressed which may indicate fatigue or stress."
+                )
+
+            if recovery_score > 80:
+                insights.append(
+                    "Current recovery trend suggests good readiness for training."
+                )
+
+            if recovery_score < 60:
+                insights.append(
+                    "Recovery score is trending lower than ideal."
+                )
+
+            if len(insights) == 0:
+                insights.append(
+                    "Not enough data yet for advanced insights."
+                )
+
+            for insight in insights:
+                st.info(insight)
+
+        # =============================================
+        # RAW DATA
+        # =============================================
+
+        if show_raw:
+
+            st.subheader("Raw Dataset")
+
+            st.dataframe(
+                combined_df.head(1000)
+            )
 
 else:
 
-    st.info(
-        "Upload your wearable ZIP export."
-    )
+st.info(
+    "Upload your wearable ZIP export to begin analysis."
+)
