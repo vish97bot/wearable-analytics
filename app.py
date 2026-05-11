@@ -11,20 +11,16 @@ st.set_page_config(
 )
 
 # =========================
-# CUSTOM STYLING
+# STYLING
 # =========================
 
 st.markdown("""
 <style>
 
-.main {
-    background-color: #0f172a;
-}
-
 .metric-card {
     background-color: #111827;
     padding: 20px;
-    border-radius: 20px;
+    border-radius: 18px;
     border: 1px solid #1f2937;
     text-align: center;
 }
@@ -36,15 +32,8 @@ st.markdown("""
 
 .metric-value {
     color: white;
-    font-size: 40px;
+    font-size: 38px;
     font-weight: bold;
-}
-
-.section-title {
-    font-size: 28px;
-    font-weight: bold;
-    margin-top: 10px;
-    margin-bottom: 10px;
 }
 
 </style>
@@ -61,8 +50,6 @@ st.caption("Ultrahuman • Zepp • Health Connect")
 # SIDEBAR
 # =========================
 
-st.sidebar.header("Controls")
-
 uploaded_zip = st.sidebar.file_uploader(
     "Upload Wearable ZIP",
     type=["zip"]
@@ -70,9 +57,9 @@ uploaded_zip = st.sidebar.file_uploader(
 
 selected_days = st.sidebar.slider(
     "Days to Display",
-    min_value=7,
-    max_value=365,
-    value=60
+    7,
+    365,
+    60
 )
 
 show_raw = st.sidebar.checkbox("Show Raw Data")
@@ -81,17 +68,17 @@ show_raw = st.sidebar.checkbox("Show Raw Data")
 # HELPERS
 # =========================
 
-def load_csv_from_zip(zip_file, filename):
+def load_csv(zip_file, filename):
 
     with zip_file.open(filename) as f:
 
         try:
+
             return pd.read_csv(
                 f,
                 sep=None,
                 engine="python",
-                on_bad_lines="skip",
-                encoding="utf-8"
+                on_bad_lines="skip"
             )
 
         except Exception:
@@ -118,115 +105,331 @@ if uploaded_zip is not None:
 
         files = z.namelist()
 
+        st.sidebar.success(
+            f"{len(files)} files detected"
+        )
+
+        daily_metrics = pd.DataFrame()
+
+        # =================================================
+        # ULTRAHUMAN PARSER
+        # =================================================
+
         ring_files = [
             f for f in files
             if "ring_data" in f.lower()
+        ]
+
+        if len(ring_files) > 0:
+
+            combined = pd.DataFrame()
+
+            for file in ring_files:
+
+                try:
+
+                    df = load_csv(z, file)
+
+                    combined = pd.concat(
+                        [combined, df],
+                        ignore_index=True
+                    )
+
+                except Exception:
+                    pass
+
+            if not combined.empty:
+
+                if "timestamp_epoch" in combined.columns:
+
+                    combined["datetime"] = pd.to_datetime(
+                        combined["timestamp_epoch"],
+                        unit="s",
+                        errors="coerce"
+                    )
+
+                    combined["date"] = (
+                        combined["datetime"].dt.date
+                    )
+
+                # HRV
+
+                hrv = combined[
+                    combined["data_type"] == "raw_hrv_2"
+                ]
+
+                if not hrv.empty:
+
+                    daily_hrv = (
+                        hrv.groupby("date")["value"]
+                        .mean()
+                        .reset_index()
+                    )
+
+                    daily_hrv.rename(
+                        columns={"value": "hrv"},
+                        inplace=True
+                    )
+
+                    daily_metrics = daily_hrv.copy()
+
+        # =================================================
+        # ZEPP PARSER
+        # =================================================
+
+        sleep_files = [
+            f for f in files
+            if "sleep" in f.lower()
             and f.endswith(".csv")
         ]
 
-        combined_df = pd.DataFrame()
+        hr_files = [
+            f for f in files
+            if "heartrate" in f.lower()
+            and f.endswith(".csv")
+        ]
 
-        progress = st.progress(0)
+        activity_files = [
+            f for f in files
+            if "activity" in f.lower()
+            and f.endswith(".csv")
+        ]
 
-        for i, file in enumerate(ring_files):
+        # SLEEP
+
+        for file in sleep_files:
 
             try:
 
-                df = load_csv_from_zip(z, file)
+                df = load_csv(z, file)
 
-                df["source_file"] = file
+                date_cols = [
+                    c for c in df.columns
+                    if "time" in c.lower()
+                    or "date" in c.lower()
+                ]
 
-                combined_df = pd.concat(
-                    [combined_df, df],
-                    ignore_index=True
-                )
+                if len(date_cols) > 0:
+
+                    date_col = date_cols[0]
+
+                    df[date_col] = pd.to_datetime(
+                        df[date_col],
+                        errors="coerce"
+                    )
+
+                    df["date"] = (
+                        df[date_col].dt.date
+                    )
+
+                    numeric_cols = df.select_dtypes(
+                        include=np.number
+                    ).columns
+
+                    if len(numeric_cols) > 0:
+
+                        metric_col = numeric_cols[0]
+
+                        sleep_daily = (
+                            df.groupby("date")[metric_col]
+                            .mean()
+                            .reset_index()
+                        )
+
+                        sleep_daily.rename(
+                            columns={
+                                metric_col: "sleep_metric"
+                            },
+                            inplace=True
+                        )
+
+                        if daily_metrics.empty:
+
+                            daily_metrics = sleep_daily
+
+                        else:
+
+                            daily_metrics = daily_metrics.merge(
+                                sleep_daily,
+                                on="date",
+                                how="outer"
+                            )
 
             except Exception:
                 pass
 
-            progress.progress((i + 1) / len(ring_files))
+        # HEART RATE
 
-        # =========================
-        # PROCESSING
-        # =========================
+        for file in hr_files:
 
-        if not combined_df.empty:
+            try:
 
-            if "timestamp_epoch" in combined_df.columns:
+                df = load_csv(z, file)
 
-                combined_df["datetime"] = pd.to_datetime(
-                    combined_df["timestamp_epoch"],
-                    unit="s",
-                    errors="coerce"
-                )
+                date_cols = [
+                    c for c in df.columns
+                    if "time" in c.lower()
+                    or "date" in c.lower()
+                ]
 
-                combined_df["date"] = (
-                    combined_df["datetime"].dt.date
-                )
+                if len(date_cols) > 0:
 
-            combined_df = combined_df.dropna(
-                subset=["date"]
+                    date_col = date_cols[0]
+
+                    df[date_col] = pd.to_datetime(
+                        df[date_col],
+                        errors="coerce"
+                    )
+
+                    df["date"] = (
+                        df[date_col].dt.date
+                    )
+
+                    numeric_cols = df.select_dtypes(
+                        include=np.number
+                    ).columns
+
+                    if len(numeric_cols) > 0:
+
+                        metric_col = numeric_cols[0]
+
+                        hr_daily = (
+                            df.groupby("date")[metric_col]
+                            .mean()
+                            .reset_index()
+                        )
+
+                        hr_daily.rename(
+                            columns={
+                                metric_col: "heart_rate"
+                            },
+                            inplace=True
+                        )
+
+                        if daily_metrics.empty:
+
+                            daily_metrics = hr_daily
+
+                        else:
+
+                            daily_metrics = daily_metrics.merge(
+                                hr_daily,
+                                on="date",
+                                how="outer"
+                            )
+
+            except Exception:
+                pass
+
+        # ACTIVITY
+
+        for file in activity_files:
+
+            try:
+
+                df = load_csv(z, file)
+
+                date_cols = [
+                    c for c in df.columns
+                    if "time" in c.lower()
+                    or "date" in c.lower()
+                ]
+
+                if len(date_cols) > 0:
+
+                    date_col = date_cols[0]
+
+                    df[date_col] = pd.to_datetime(
+                        df[date_col],
+                        errors="coerce"
+                    )
+
+                    df["date"] = (
+                        df[date_col].dt.date
+                    )
+
+                    numeric_cols = df.select_dtypes(
+                        include=np.number
+                    ).columns
+
+                    if len(numeric_cols) > 0:
+
+                        metric_col = numeric_cols[0]
+
+                        activity_daily = (
+                            df.groupby("date")[metric_col]
+                            .sum()
+                            .reset_index()
+                        )
+
+                        activity_daily.rename(
+                            columns={
+                                metric_col: "activity"
+                            },
+                            inplace=True
+                        )
+
+                        if daily_metrics.empty:
+
+                            daily_metrics = activity_daily
+
+                        else:
+
+                            daily_metrics = daily_metrics.merge(
+                                activity_daily,
+                                on="date",
+                                how="outer"
+                            )
+
+            except Exception:
+                pass
+
+        # =================================================
+        # FINAL PROCESSING
+        # =================================================
+
+        if not daily_metrics.empty:
+
+            daily_metrics = daily_metrics.sort_values(
+                "date"
             )
 
             latest_date = pd.to_datetime(
-                combined_df["date"]
+                daily_metrics["date"]
             ).max()
 
-            cutoff_date = latest_date - pd.Timedelta(
+            cutoff = latest_date - pd.Timedelta(
                 days=selected_days
             )
 
-            combined_df = combined_df[
-                pd.to_datetime(combined_df["date"])
-                >= cutoff_date
+            daily_metrics = daily_metrics[
+                pd.to_datetime(daily_metrics["date"])
+                >= cutoff
             ]
 
-            # =========================
-            # HRV DATA
-            # =========================
+            # Recovery Score
 
-            hrv_df = combined_df[
-                combined_df["data_type"] == "raw_hrv_2"
-            ].copy()
+            if "hrv" in daily_metrics.columns:
 
-            recovery_score = 0
-            avg_hrv = 0
+                recovery = (
+                    daily_metrics["hrv"] / 120
+                ) * 100
 
-            if not hrv_df.empty:
-
-                daily_hrv = (
-                    hrv_df.groupby("date")["value"]
-                    .mean()
-                    .reset_index()
-                )
-
-                avg_hrv = daily_hrv["value"].tail(7).mean()
-
-                recovery_score = np.clip(
-                    (avg_hrv / 120) * 100,
+                daily_metrics["recovery"] = np.clip(
+                    recovery,
                     0,
                     100
                 )
 
-            sleep_score = np.clip(
-                recovery_score * 0.92,
-                0,
-                100
-            )
+            else:
 
-            readiness_score = (
-                recovery_score * 0.6 +
-                sleep_score * 0.4
-            )
+                daily_metrics["recovery"] = 50
 
-            # =========================
+            latest = daily_metrics.iloc[-1]
+
+            # =================================================
             # HERO METRICS
-            # =========================
-
-            st.markdown(
-                '<div class="section-title">Overview</div>',
-                unsafe_allow_html=True
-            )
+            # =================================================
 
             col1, col2, col3, col4 = st.columns(4)
 
@@ -234,182 +437,145 @@ if uploaded_zip is not None:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-title">Recovery</div>
-                    <div class="metric-value">{recovery_score:.0f}</div>
+                    <div class="metric-value">
+                        {latest['recovery']:.0f}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
             with col2:
+
+                hrv_value = latest.get("hrv", np.nan)
+
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">Sleep</div>
-                    <div class="metric-value">{sleep_score:.0f}</div>
+                    <div class="metric-title">HRV</div>
+                    <div class="metric-value">
+                        {hrv_value:.0f}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
             with col3:
+
+                hr_value = latest.get(
+                    "heart_rate",
+                    np.nan
+                )
+
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">Readiness</div>
-                    <div class="metric-value">{readiness_score:.0f}</div>
+                    <div class="metric-title">Heart Rate</div>
+                    <div class="metric-value">
+                        {hr_value:.0f}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
             with col4:
+
+                act_value = latest.get(
+                    "activity",
+                    np.nan
+                )
+
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-title">Average HRV</div>
-                    <div class="metric-value">{avg_hrv:.0f}</div>
+                    <div class="metric-title">Activity</div>
+                    <div class="metric-value">
+                        {act_value:.0f}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-            # =========================
+            # =================================================
             # TABS
-            # =========================
+            # =================================================
 
-            tab1, tab2, tab3, tab4 = st.tabs([
+            tab1, tab2, tab3 = st.tabs([
                 "Overview",
-                "Recovery",
                 "Trends",
                 "Insights"
             ])
 
-            # =========================
-            # TAB 1
-            # =========================
-
             with tab1:
 
-                st.subheader("HRV Trend")
+                st.subheader("Recovery Trend")
 
-                if not hrv_df.empty:
+                fig = px.line(
+                    daily_metrics,
+                    x="date",
+                    y="recovery"
+                )
 
-                    fig = px.line(
-                        daily_hrv,
-                        x="date",
-                        y="value",
-                        title="Daily HRV"
-                    )
+                fig.update_layout(
+                    template="plotly_dark",
+                    height=450
+                )
 
-                    fig.update_layout(
-                        template="plotly_dark",
-                        height=450
-                    )
-
-                    st.plotly_chart(
-                        fig,
-                        use_container_width=True
-                    )
-
-            # =========================
-            # TAB 2
-            # =========================
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
 
             with tab2:
 
-                if not hrv_df.empty:
+                numeric = daily_metrics.select_dtypes(
+                    include=np.number
+                )
 
-                    recovery_df = daily_hrv.copy()
+                if len(numeric.columns) > 1:
 
-                    recovery_df["rolling_hrv"] = (
-                        recovery_df["value"]
-                        .rolling(7)
-                        .mean()
-                    )
+                    corr = numeric.corr()
 
-                    fig = px.line(
-                        recovery_df,
-                        x="date",
-                        y=["value", "rolling_hrv"],
-                        title="Recovery Trend"
-                    )
-
-                    fig.update_layout(
-                        template="plotly_dark",
-                        height=500
+                    fig = px.imshow(
+                        corr,
+                        text_auto=True,
+                        aspect="auto",
+                        title="Correlations"
                     )
 
                     st.plotly_chart(
                         fig,
                         use_container_width=True
                     )
-
-            # =========================
-            # TAB 3
-            # =========================
 
             with tab3:
 
-                if not hrv_df.empty:
-
-                    fig = px.histogram(
-                        hrv_df,
-                        x="value",
-                        nbins=50,
-                        title="HRV Distribution"
-                    )
-
-                    fig.update_layout(
-                        template="plotly_dark",
-                        height=450
-                    )
-
-                    st.plotly_chart(
-                        fig,
-                        use_container_width=True
-                    )
-
-            # =========================
-            # TAB 4
-            # =========================
-
-            with tab4:
-
                 st.subheader("AI Insights")
 
-                insights = []
+                recovery_avg = (
+                    daily_metrics["recovery"]
+                    .tail(7)
+                    .mean()
+                )
 
-                if avg_hrv > 90:
-                    insights.append(
-                        "Recovery appears strong with elevated HRV."
+                if recovery_avg > 80:
+
+                    st.success(
+                        "Recovery trend is strong."
                     )
 
-                if avg_hrv < 50:
-                    insights.append(
-                        "HRV appears suppressed which may indicate fatigue."
+                elif recovery_avg < 60:
+
+                    st.warning(
+                        "Recovery trend is lower than ideal."
                     )
 
-                if recovery_score > 80:
-                    insights.append(
-                        "Current recovery trend suggests good readiness."
+                else:
+
+                    st.info(
+                        "Recovery trend is stable."
                     )
-
-                if recovery_score < 60:
-                    insights.append(
-                        "Recovery score is trending lower than ideal."
-                    )
-
-                if len(insights) == 0:
-                    insights.append(
-                        "Not enough data for advanced insights yet."
-                    )
-
-                for insight in insights:
-                    st.info(insight)
-
-            # =========================
-            # RAW DATA
-            # =========================
 
             if show_raw:
 
-                st.subheader("Raw Dataset")
+                st.subheader("Daily Metrics")
 
-                st.dataframe(
-                    combined_df.head(1000)
-                )
+                st.dataframe(daily_metrics)
 
 else:
 
     st.info(
-        "Upload your wearable ZIP export to begin analysis."
+        "Upload your wearable ZIP export."
     )
