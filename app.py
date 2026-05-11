@@ -67,7 +67,6 @@ def load_csv_from_zip(zip_file, filename):
 # =====================================================
 # MAIN
 # =====================================================
-
 if uploaded_zip is not None:
 
     zip_bytes = io.BytesIO(uploaded_zip.read())
@@ -76,9 +75,91 @@ if uploaded_zip is not None:
 
         st.success("ZIP uploaded successfully")
 
+        files = z.namelist()
+
         st.subheader("Files Detected")
 
-        st.write(z.namelist())
+        st.write(files)
+
+        # =============================================
+        # FIND RING DATA FILES
+        # =============================================
+
+        ring_files = [
+            f for f in files
+            if "ring_data" in f.lower()
+            and f.endswith(".csv")
+        ]
+
+        st.subheader("Ring Data Files")
+
+        st.write(f"Detected {len(ring_files)} ring data files")
+
+        # =============================================
+        # LOAD ALL RING FILES
+        # =============================================
+
+        combined_df = pd.DataFrame()
+
+        for file in ring_files:
+
+            try:
+
+                with z.open(file) as f:
+
+                    df = pd.read_csv(
+                        f,
+                        sep=None,
+                        engine="python",
+                        on_bad_lines="skip"
+                    )
+
+                    df["source_file"] = file
+
+                    combined_df = pd.concat(
+                        [combined_df, df],
+                        ignore_index=True
+                    )
+
+            except Exception as e:
+
+                st.warning(f"Could not load {file}: {e}")
+
+        # =============================================
+        # DISPLAY DATA
+        # =============================================
+
+        if not combined_df.empty:
+
+            st.subheader("Combined Ring Dataset")
+
+            st.write(
+                f"Total rows loaded: {len(combined_df):,}"
+            )
+
+            st.dataframe(combined_df.head())
+
+            st.subheader("Columns")
+
+            st.write(combined_df.columns.tolist())
+
+            # =========================================
+            # FIND NUMERIC COLUMNS
+            # =========================================
+
+            numeric_cols = combined_df.select_dtypes(
+                include=np.number
+            ).columns.tolist()
+
+            st.subheader("Numeric Metrics")
+
+            st.write(numeric_cols)
+
+            # =========================================
+            # DATE DETECTION
+            # =========================================
+
+            possible_dates
 
         # =================================================
         # LOAD SLEEP
