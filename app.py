@@ -5,6 +5,10 @@ import plotly.express as px
 import zipfile
 import io
 
+# =====================================================
+# PAGE CONFIG
+# =====================================================
+
 st.set_page_config(
     page_title="Wearable Analytics Dashboard",
     layout="wide"
@@ -28,15 +32,6 @@ uploaded_zip = st.file_uploader(
 # =====================================================
 # HELPERS
 # =====================================================
-
-def find_csv(zip_file, keyword):
-
-    for file in zip_file.namelist():
-
-        if keyword.lower() in file.lower() and file.endswith(".csv"):
-            return file
-
-    return None
 
 def load_csv_from_zip(zip_file, filename):
 
@@ -63,10 +58,10 @@ def load_csv_from_zip(zip_file, filename):
                 encoding="latin1"
             )
 
-
 # =====================================================
 # MAIN
 # =====================================================
+
 if uploaded_zip is not None:
 
     zip_bytes = io.BytesIO(uploaded_zip.read())
@@ -105,21 +100,14 @@ if uploaded_zip is not None:
 
             try:
 
-                with z.open(file) as f:
+                df = load_csv_from_zip(z, file)
 
-                    df = pd.read_csv(
-                        f,
-                        sep=None,
-                        engine="python",
-                        on_bad_lines="skip"
-                    )
+                df["source_file"] = file
 
-                    df["source_file"] = file
-
-                    combined_df = pd.concat(
-                        [combined_df, df],
-                        ignore_index=True
-                    )
+                combined_df = pd.concat(
+                    [combined_df, df],
+                    ignore_index=True
+                )
 
             except Exception as e:
 
@@ -144,7 +132,7 @@ if uploaded_zip is not None:
             st.write(combined_df.columns.tolist())
 
             # =========================================
-            # FIND NUMERIC COLUMNS
+            # NUMERIC COLUMNS
             # =========================================
 
             numeric_cols = combined_df.select_dtypes(
@@ -159,182 +147,100 @@ if uploaded_zip is not None:
             # DATE DETECTION
             # =========================================
 
-            possible_dates
+            possible_dates = [
+                c for c in combined_df.columns
+                if "date" in c.lower()
+                or "time" in c.lower()
+            ]
 
-        # =================================================
-        # LOAD SLEEP
-        # =================================================
+            # Ultrahuman epoch conversion
+            if "timestamp_epoch" in combined_df.columns:
 
-        sleep_file = find_csv(z, "sleep")
-
-        if sleep_file:
-
-            sleep_df = load_csv_from_zip(z, sleep_file)
-
-            st.subheader("Sleep Data")
-
-            st.dataframe(sleep_df.head())
-
-            cols = sleep_df.columns.tolist()
-
-            st.write("Columns:", cols)
-
-            date_col = None
-
-            for c in cols:
-                if "time" in c.lower() or "date" in c.lower():
-                    date_col = c
-                    break
-
-            if date_col:
-
-                sleep_df[date_col] = pd.to_datetime(
-                    sleep_df[date_col],
+                combined_df["datetime"] = pd.to_datetime(
+                    combined_df["timestamp_epoch"],
+                    unit="s",
                     errors="coerce"
                 )
 
-                sleep_df["date"] = sleep_df[date_col].dt.date
+                possible_dates.append("datetime")
 
-                numeric_cols = sleep_df.select_dtypes(
-                    include=np.number
-                ).columns
+            st.subheader("Possible Date Columns")
 
-                if len(numeric_cols) > 0:
+            st.write(possible_dates)
 
-                    metric = numeric_cols[0]
+            # =========================================
+            # DATA TYPES
+            # =========================================
 
-                    daily_sleep = (
-                        sleep_df.groupby("date")[metric]
-                        .mean()
-                        .reset_index()
-                    )
+            if "data_type" in combined_df.columns:
 
-                    fig = px.line(
-                        daily_sleep,
-                        x="date",
-                        y=metric,
-                        title="Sleep Trend"
-                    )
+                st.subheader("Detected Data Types")
 
-                    st.plotly_chart(
-                        fig,
-                        use_container_width=True
-                    )
-
-        # =================================================
-        # LOAD ACTIVITY
-        # =================================================
-
-        activity_file = find_csv(z, "activity")
-
-        if activity_file:
-
-            activity_df = load_csv_from_zip(
-                z,
-                activity_file
-            )
-
-            st.subheader("Activity Data")
-
-            st.dataframe(activity_df.head())
-
-            cols = activity_df.columns.tolist()
-
-            st.write("Columns:", cols)
-
-            numeric_cols = activity_df.select_dtypes(
-                include=np.number
-            ).columns
-
-            date_col = None
-
-            for c in cols:
-                if "time" in c.lower() or "date" in c.lower():
-                    date_col = c
-                    break
-
-            if date_col and len(numeric_cols) > 0:
-
-                activity_df[date_col] = pd.to_datetime(
-                    activity_df[date_col],
-                    errors="coerce"
-                )
-
-                activity_df["date"] = (
-                    activity_df[date_col].dt.date
-                )
-
-                metric = numeric_cols[0]
-
-                daily_activity = (
-                    activity_df.groupby("date")[metric]
-                    .sum()
+                data_types = (
+                    combined_df["data_type"]
+                    .value_counts()
                     .reset_index()
                 )
 
-                fig = px.bar(
-                    daily_activity,
-                    x="date",
-                    y=metric,
-                    title="Activity Trend"
+                data_types.columns = [
+                    "data_type",
+                    "count"
+                ]
+
+                st.dataframe(data_types)
+
+                selected_type = st.selectbox(
+                    "Select Metric",
+                    data_types["data_type"].tolist()
                 )
 
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True
+                filtered = combined_df[
+                    combined_df["data_type"] == selected_type
+                ]
+
+            else:
+
+                filtered = combined_df.copy()
+
+            # =========================================
+            # VISUALIZATION
+            # =========================================
+
+            if (
+                len(possible_dates) > 0
+                and len(numeric_cols) > 0
+            ):
+
+                if "datetime" in filtered.columns:
+                    date_col = "datetime"
+                else:
+                    date_col = possible_dates[0]
+
+                metric_col = "value"
+
+                filtered = filtered.dropna(
+                    subset=[date_col]
                 )
 
-        # =================================================
-        # HEART RATE
-        # =================================================
-
-        hr_file = find_csv(z, "heart")
-
-        if hr_file:
-
-            hr_df = load_csv_from_zip(z, hr_file)
-
-            st.subheader("Heart Rate Data")
-
-            st.dataframe(hr_df.head())
-
-            cols = hr_df.columns.tolist()
-
-            st.write("Columns:", cols)
-
-            numeric_cols = hr_df.select_dtypes(
-                include=np.number
-            ).columns
-
-            date_col = None
-
-            for c in cols:
-                if "time" in c.lower() or "date" in c.lower():
-                    date_col = c
-                    break
-
-            if date_col and len(numeric_cols) > 0:
-
-                hr_df[date_col] = pd.to_datetime(
-                    hr_df[date_col],
-                    errors="coerce"
+                filtered["date"] = (
+                    filtered[date_col].dt.date
                 )
 
-                hr_df["date"] = hr_df[date_col].dt.date
-
-                metric = numeric_cols[0]
-
-                daily_hr = (
-                    hr_df.groupby("date")[metric]
+                daily = (
+                    filtered.groupby("date")[metric_col]
                     .mean()
                     .reset_index()
                 )
 
+                st.subheader(
+                    f"{selected_type} Trend"
+                )
+
                 fig = px.line(
-                    daily_hr,
+                    daily,
                     x="date",
-                    y=metric,
-                    title="Heart Rate Trend"
+                    y=metric_col,
+                    title=f"{selected_type} Over Time"
                 )
 
                 st.plotly_chart(
@@ -342,8 +248,42 @@ if uploaded_zip is not None:
                     use_container_width=True
                 )
 
+                # =====================================
+                # SUMMARY STATS
+                # =====================================
+
+                st.subheader("Summary Statistics")
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.metric(
+                        "Average",
+                        f"{daily[metric_col].mean():.2f}"
+                    )
+
+                with col2:
+                    st.metric(
+                        "Maximum",
+                        f"{daily[metric_col].max():.2f}"
+                    )
+
+                with col3:
+                    st.metric(
+                        "Minimum",
+                        f"{daily[metric_col].min():.2f}"
+                    )
+
+                # =====================================
+                # RAW DATA
+                # =====================================
+
+                with st.expander("View Raw Data"):
+
+                    st.dataframe(filtered.head(1000))
+
 else:
 
     st.info(
-        "Upload your wearable ZIP export to begin analysis."
+        "Upload your wearable ZIP export."
     )
