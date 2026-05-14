@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { LineChart, Line, AreaChart, Area, BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
-// ── SAMPLE DATA ────────────────────────────────────────────────────────────────
+//SAMPLE DATA
 const generateWeekData = () => {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   return days.map((day, i) => ({
@@ -50,7 +50,7 @@ const sleepStages = [
 const weekData = generateWeekData();
 const monthData = generate30Days();
 
-// ── ICONS ──────────────────────────────────────────────────────────────────────
+//ICONS
 const Icon = ({ name, size = 16 }) => {
   const icons = {
     heart: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
@@ -68,7 +68,7 @@ const Icon = ({ name, size = 16 }) => {
   return icons[name] || null;
 };
 
-// ── SCORE RING ─────────────────────────────────────────────────────────────────
+//SCORE RING
 const ScoreRing = ({ value, max = 100, size = 120, strokeWidth = 8, color, label, sublabel }) => {
   const r = (size - strokeWidth * 2) / 2;
   const circ = 2 * Math.PI * r;
@@ -91,7 +91,7 @@ const ScoreRing = ({ value, max = 100, size = 120, strokeWidth = 8, color, label
   );
 };
 
-// ── METRIC CARD ────────────────────────────────────────────────────────────────
+//METRIC CARD
 const MetricCard = ({ label, value, unit, icon, color, trend, onClick, active }) => (
   <div onClick={onClick} style={{
     background: active ? `${color}12` : "#10121a",
@@ -116,7 +116,7 @@ const MetricCard = ({ label, value, unit, icon, color, trend, onClick, active })
   </div>
 );
 
-// ── UPLOAD MODAL ───────────────────────────────────────────────────────────────
+//UPLOAD MODAL
 const UploadModal = ({ onClose }) => {
   const [dragging, setDragging] = useState(false);
   const [files, setFiles] = useState([]);
@@ -183,7 +183,7 @@ const UploadModal = ({ onClose }) => {
   );
 };
 
-// ── CUSTOM TOOLTIP ─────────────────────────────────────────────────────────────
+//CUSTOM TOOLTIP
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
@@ -228,7 +228,7 @@ const SleepBreakdown = ({ data }) => {
   );
 };
 
-// ── WORKOUT CARD ───────────────────────────────────────────────────────────────
+//WORKOUT CARD
 const typeColors = { run: "#22d3a5", strength: "#8b5cf6", hiit: "#e74c3c", walk: "#3b82f6", cycle: "#f59e0b" };
 const WorkoutCard = ({ w }) => (
   <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0",
@@ -249,7 +249,7 @@ const WorkoutCard = ({ w }) => (
   </div>
 );
 
-// ── MAIN APP ───────────────────────────────────────────────────────────────────
+//MAIN APP
 export default function App() {
   const [tab, setTab] = useState("overview");
   const [range, setRange] = useState("7d");
